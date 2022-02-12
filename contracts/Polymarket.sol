@@ -49,7 +49,7 @@ contract Polymarket {
         uint256 totalYesAmount,
         uint256 totalNoAmount
     );
-    
+
     function createMarket(
         string memory _market,
         string memory _creatorImageHash,
@@ -83,5 +83,82 @@ contract Polymarket {
             0,
             0
         );
+    }
+    function addYesBet(uint256 _marketId, uint256 _value) public payable {
+        require(_value <= ERC20(polyToken).allowance(msg.sender, address(this)), "Not allowed to spend this amount.");
+        Markets storage market = markets[_marketId];
+        ERC20(polyToken).transferFrom(msg.sender, address(this), _value);
+        AmountAdded memory amountAdded = AmountAdded(
+            msg.sender,
+            _value,
+            block.timestamp
+        );
+
+        market.totalYesAmount += _value;
+        market.totalAmount += _value;
+        market.yesCount.push(amountAdded);
+    }
+
+    function addNoBet(uint256 _marketId, uint256 _value) public payable {
+        require(_value <= ERC20(polyToken).allowance(msg.sender, address(this)), "Not allowed to spend this amount.");
+        Markets storage market = markets[_marketId];
+        ERC20(polyToken).transferFrom(msg.sender, address(this), _value);
+        AmountAdded memory amountAdded = AmountAdded(
+            msg.sender,
+            _value,
+            block.timestamp
+        );
+
+        market.totalNoAmount += _value;
+        market.totalAmount += _value;
+        market.noCount.push(amountAdded);
+    }
+    function getGraphData(uint256 _marketId)
+        public
+        view
+        returns (AmountAdded[] memory, AmountAdded[] memory)
+    {
+        Markets storage market = markets[_marketId];
+        return (market.yesCount, market.noCount);
+    }
+    function distributeWinningAmount(uint256 _marketId, bool eventOutcome)
+        public
+        payable
+    {
+        require(msg.sender == owner, "Unauthorized");
+
+        Markets storage market = markets[_marketId];
+        if (eventOutcome) {
+            for (uint256 i = 0; i < market.yesCount.length; i++) {
+                uint256 amount = (market.totalNoAmount *
+                    market.yesCount[i].amount) / market.totalYesAmount;
+                winningAmount[market.yesCount[i].user] += (amount +
+                    market.yesCount[i].amount);
+                winningAddresses.push(market.yesCount[i].user);
+            }
+
+            for (uint256 i = 0; i < winningAddresses.length; i++) {
+                address payable _address = payable(winningAddresses[i]);
+                ERC20(polyToken).transfer(_address, winningAmount[_address]);
+                delete winningAmount[_address];
+            }
+            delete winningAddresses;
+        } else {
+            for (uint256 i = 0; i < market.noCount.length; i++) {
+                uint256 amount = (market.totalYesAmount *
+                    market.noCount[i].amount) / market.totalNoAmount;
+                winningAmount[market.noCount[i].user] += (amount +
+                    market.noCount[i].amount);
+                winningAddresses.push(market.noCount[i].user);
+            }
+
+            for (uint256 i = 0; i < winningAddresses.length; i++) {
+                address payable _address = payable(winningAddresses[i]);
+                ERC20(polyToken).transfer(_address, winningAmount[_address]);
+                delete winningAmount[_address];
+            }
+            delete winningAddresses;
+        }
+        market.eventCompleted = true;
     }
 }
